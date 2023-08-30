@@ -24,7 +24,7 @@
 |14:30-14:45 |_break_ | |
 |14:45-15:45 |Lecture: [Clustering and cell annotation](Lectures/Day3_clustering_cell_annotation_Reinders.pdf) | Lieke Michielsen |
 |15:45-16:00 |_break_ | |
-|16:00-17:00 |Online Lecture: scNL symposium (Stefania Giacomello) | |
+|16:00-17:00 |Online Lecture: scNL symposium | Stefania Giacomello |
 
 ### Day 3 (Wednesday 25.10.2023) - LOCATION
 | When | What | Who |
