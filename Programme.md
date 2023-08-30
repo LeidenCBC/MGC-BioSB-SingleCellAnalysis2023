@@ -12,10 +12,6 @@
 |14:30-14:45 |_break_| |
 |14:45-16:15 |Practical: [Dimensionality reduction](session-dimensionalityreduction/Dimensionality_Reduction.md) | TAs |
 
-|14:45-16:15 |Lecture: [Quality control and normalization](Lectures/Day1_QC_and_Normalization_Mahfouz.pdf) | Ahmed Mahfouz |
-|15:15-15:30 |_break_ | |
-|15:30-17:00 |Practical: [Quality control and normalization](session-qc-normalization/QC_Normalization.md) | TAs (Qirong, Remco) |
-
 ### Day 2 (Tuesday 24.10.2023) - LOCATION
 | When | What | Who |
 | ------------- | ------------- | ------------- |

@@ -26,7 +26,6 @@ For this course, we make use of RStudio Cloud. All you need for this is a browse
 - Ahmed Mahfouz (LUMC/TU Delft)
 - Tamim Abdelaal (Genmab)
 - Lieke Michielsen (LUMC/TU Delft)
-- Mohammed Charrout (TU Delft/LUMC)
 - Marcel Reinders (TU Delft)
 - Laura Heezen (LUMC)
 
