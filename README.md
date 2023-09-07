@@ -12,7 +12,7 @@ The course features a mix of lectures and practicals, and you will have the oppo
 
 Location: Erasmus MC, Rotterdam (Room OWR-23)
 
-Directions: 
+Room OWR-23 is located in the Onderwijscentrum (educational center). Check this link for directions within the EMC: https://stip.erasmusmc.nl/ResearchMasters/590
 
 
 ### [Programme](Programme.md)
