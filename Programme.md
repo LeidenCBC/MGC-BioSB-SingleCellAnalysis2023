@@ -45,7 +45,7 @@
 | ------------- | ------------- | ------------- |
 |09:00-10:00 |Lecture: [Spatial transcriptomics](Lectures/Day4_Spatial_transcriptomics.pdf) | Ahmed Mahfouz |
 |10:00-10:15 |_break_ |  |
-|10:15-11:15 |Practical: [Trajectory inference](session-trajectories/session-trajectories.md) | TAs (Mohammed, Gregory) |
+|10:15-11:15 |Practical: [Trajectory inference](session-trajectories/session-trajectories.md) | TAs |
 |11:15-12:00 |Practical: [Spatial transcriptomics](session-spatialtranscriptomics/Spatialtranscriptomics.md) | TAs |
 |12:00-13:00 |_lunch_ |  |
 |13:00-14:00 |Mini Symposium | Anna Alemany |
