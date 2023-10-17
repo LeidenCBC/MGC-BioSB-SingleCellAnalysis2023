@@ -38,7 +38,7 @@
 |14:00-14:15 |_break_ | |
 |14:15-15:45 |Practical: [Differential expression analysis](session-differentialexpression/Differential_Expression.md) | TAs |
 |15:45-16:00 |_break_ | |
-|16:00-17:00 |Lecture: [Trajectory inference](Lectures/Day4_Trajectory_inference_Charrout.pdf) | Mohammed Charrout |
+|16:00-17:00 |Lecture: [Trajectory inference](Lectures/Day4_Trajectory_inference_Charrout.pdf) | Ahmed Mahfouz |
 
 ### Day 4 (Thursday 26.10.2023) - LOCATION
 | When | What | Who |
@@ -48,7 +48,7 @@
 |10:15-11:15 |Practical: [Trajectory inference](session-trajectories/session-trajectories.md) | TAs (Mohammed, Gregory) |
 |11:15-12:00 |Practical: [Spatial transcriptomics](session-spatialtranscriptomics/Spatialtranscriptomics.md) | TAs |
 |12:00-13:00 |_lunch_ |  |
-|13:00-14:00 |Mini Symposium | Anna Alemany |
-|14:00-15:00 |Mini Symposium | Vincent van Unen |
+|13:00-14:00 |Mini Symposium (Dr. Anna Alemany) |
+|14:00-15:00 |Mini Symposium (Dr. Vincent van Unen) |
 
 ## [Back to main](README.md)
