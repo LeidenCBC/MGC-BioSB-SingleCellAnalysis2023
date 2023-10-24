@@ -8,7 +8,7 @@
 |10:15-11:15 |Lecture: [scRNA-seq platforms](Lectures/Day1_scRNAseq_platforms_MPChien_2022.pdf) | Miao-Ping Chien |
 |11:15-12:00 |Lecture: [Preprocessing](Lectures/Day1_SingleCell_pre-process_Menafra_2022.pdf) | Susan Kloet |
 |12:00-13:30 |_lunch + introductions_ |  |
-|13:30-14:30 |Lecture: [Dimensionality reduction](Lectures/Day2_dimensionality_reduction_Vieth.pdf) | Marcel Reinders |
+|13:30-14:30 |Lecture: [Dimensionality reduction](Lectures/Day1_dimensionality_reduction_Reinders.pdf) | Marcel Reinders |
 |14:30-14:45 |_break_| |
 |14:45-16:15 |Practical: [Dimensionality reduction](session-dimensionalityreduction/Dimensionality_Reduction.md) | TAs |
 
