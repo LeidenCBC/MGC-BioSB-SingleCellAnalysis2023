@@ -15,10 +15,10 @@
 ### Day 2 (Tuesday 24.10.2023) - LOCATION
 | When | What | Who |
 | ------------- | ------------- | ------------- |
-|09:00-10:00 |Lecture: [Single-cell multi-omics](Lectures/Day2_Single-cell_multi_omics_Chien.pdf) | Miao-Ping Chien |
+|09:00-10:00 |Lecture: [Single-cell multi-omics](Lectures/Day2_Multiomics_MPChien_2023.pdf) | Miao-Ping Chien |
 |10:00-10:15 |_break_ |  |
 |10:15-11:00 |Lecture: [Experimental design & sample preparation](Lectures/Day2_Sample_prep_and_experimental_design_Kloet.pdf) | Susan Kloet |
-|11:00-12:00 |Lecture: [Quality control and normalization](Lectures/Day1_QC_and_Normalization_Mahfouz.pdf) | Ahmed Mahfouz |
+|11:00-12:00 |Lecture: [Quality control and normalization](Lectures/Day2_QC_normalization_Mahfouz.pdf) | Ahmed Mahfouz |
 |12:00-13:00 |_lunch_ |  |
 |13:00-14:30 |Practical: [Quality control and normalization](session-qc-normalization/QC_Normalization.md) | TAs |
 |14:30-14:45 |_break_ | |
