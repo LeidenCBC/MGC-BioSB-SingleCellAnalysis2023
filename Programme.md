@@ -3,10 +3,10 @@
 ### Day 1 (Monday 23.10.2023) - LOCATION
 | When | What | Who |
 | ------------- | ------------- | ------------- |
-|09:00-10:00 |Lecture: [Overview of different single-cell platforms and assays](Lectures/Day1_Overview_single_cell_sequencing_Kloet_2023.pptx) | Susan Kloet |
+|09:00-10:00 |Lecture: [Overview of different single-cell platforms and assays](Lectures/Day1_Overview_single_cell_sequencing_Kloet_2023.pdf) | Susan Kloet |
 |10:00-10:15 |_break_ |  |
 |10:15-11:15 |Lecture: [scRNA-seq platforms](Lectures/Day1_scRNAseq_platforms_MPChien_2023.pdf) | Miao-Ping Chien |
-|11:15-12:00 |Lecture: [Preprocessing](Lectures/Day1_SingleCell_pre-process_2023.pptx) | Susan Kloet |
+|11:15-12:00 |Lecture: [Preprocessing](Lectures/Day1_SingleCell_pre-process_2023.pdf) | Susan Kloet |
 |12:00-13:30 |_lunch + introductions_ |  |
 |13:30-14:30 |Lecture: [Dimensionality reduction](Lectures/Day1_dimensionality_reduction_Reinders.pdf) | Marcel Reinders |
 |14:30-14:45 |_break_| |
