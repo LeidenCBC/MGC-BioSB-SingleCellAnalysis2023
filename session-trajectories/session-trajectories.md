@@ -1,541 +1,457 @@
 Trajectory inference
 ================
-Jules GILET (Institut Curie, France)
+Qirong Mao
 
-Created by: Jules GILET (Institut Curie, France)  
-Edited by: Mohammed Charrout, Lieke Michielsen
-
-# Overview
-
-Transcriptional trajectories will be inferred from data by Nestorowa,
-Hamey et al. ([Blood,
-2016](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5305050/)) The
-dataset consists of 1600 hematopoietic stem and progenitor cells from
-mouse bone marrow, sequenced using the SMARTseq2 technology. Using flow
-cytometry and index sorting, 12 HSPC of different phenotypes (about 10
-cells each) have been included in the dataset, and will be used in this
-lab as a biological prior for the identification of the root and the
-branches in the transcriptional trajectory models.
-
-## Datasets
-
-You can find the datasets within `data.zip` in this directory. Unpack
-it, and make sure that it creates a seperate directory named `data` that
-includes the following files:
-
--   nestorowa_corrected_log2_transformed_counts.txt
--   nestorowa_corrected_population_annotation.txt
--   HTSeq_counts.txt
-
-## Part I - Monocle2/DDRtree
-
-Inference is done with Monocle2/DDRtree available via Bioconductor.
+Acknowledgment: This tutorial of Dimensionality Reduction is based on
+the Slingshot tutorial on Bioconductor
+([Link](https://bioconductor.org/packages/devel/bioc/vignettes/slingshot/inst/doc/vignette.html))
+and the single cell RNA-seq workshop from Broad Institute
+([Link](https://broadinstitute.github.io/2020_scWorkshop/trajectory-analysis.html))
 
 ``` r
-library(monocle)
-library(biomaRt)
+suppressPackageStartupMessages({
+library(SingleCellExperiment)
+library(Seurat)
+library(ggbeeswarm)
+library(ggthemes)
+library(dplyr)
+library(cowplot)
+library(RColorBrewer)
+library(scater)
+library(scran)
+library(tradeSeq)
+library(slingshot)
+})
 ```
 
-### Data loading
+## Data loading
 
-The authors provide an expression matrix that has been filtered (highly
-expressed genes, high quality cells), scaled and log-normalized. An
-annotation table is also provided, with each cell type labelled
-according to the immunophenotyping done by flow cytometry.
+We will use a nice SMART-Seq2 single cell RNA-seq data from Single-Cell
+RNA-Seq Reveals Dynamic, Random Monoallelic Gene Expression in Mammalian
+Cells. Here is one relevant detail from their paper: “To investigate
+allele-specific gene expression at single-cell resolution, we isolated
+269 individual cells dissociated from in vivo F1 embryos (CAST/EiJ ×
+C57BL/6J, hereafter abbreviated as CAST and C57, respectively) from
+oocyte to blastocyst stages of mouse preimplantation development (PD)”
 
 ``` r
-lognorm <- t(read.table('data/nestorowa_corrected_log2_transformed_counts.txt', sep=" ", header=TRUE))
-anno_table <- read.table('data/nestorowa_corrected_population_annotation.txt')
+mydir <- "/cloud/project/session-trajectories/data/"
+path.deng <- paste0(mydir, "deng-reads.rds")
+deng_SCE <- readRDS(path.deng)
 ```
 
-To infer a trajectory with Monocle2/DDRtree, using non-normalized
-UMI-based counts is highly recommended, as Monocle2 will scale and
-normalize the data internally and is expecting data distributed
-according to a negative binomial.
-
-The count matrix has been downloaded and will be used for Monocle2:
-
 ``` r
-counts <- read.table('data/HTSeq_counts.txt', sep="\t", header=TRUE, row.names='ID')
-
-counts[1:5,1:5]
+table(deng_SCE$cell_type2)
 ```
 
-    ##                    HSPC_007 HSPC_013 HSPC_019 HSPC_025 HSPC_031
-    ## ENSMUSG00000000001        0        7        1      185        2
-    ## ENSMUSG00000000003        0        0        0        0        0
-    ## ENSMUSG00000000028        4        1        2        4        3
-    ## ENSMUSG00000000031        0        0        0        0        0
-    ## ENSMUSG00000000037        0        0        0        0        0
+    ## 
+    ##     16cell      4cell      8cell early2cell earlyblast  late2cell  lateblast 
+    ##         50         14         37          8         43         10         30 
+    ##   mid2cell   midblast         zy 
+    ##         12         60          4
+
+## Principle Components Analysis
+
+Let us take a first look at the Deng data. One simple approach to
+ordering cells in pseudotime is to use PCA. By carrying out PCA and
+labeling the cells by the stage at which they were collected, we can see
+how well the principal components separate cells along a differentiation
+trajectory.
 
 ``` r
-dim(counts)
+##
+deng_SCE$cell_type2 <- factor(deng_SCE$cell_type2,
+                              levels = c("zy", "early2cell", "mid2cell", "late2cell", 
+                                         "4cell", "8cell", "16cell", "earlyblast",
+                                         "midblast", "lateblast"))
 ```
 
-    ## [1] 46175  1920
-
 ``` r
-lognorm[1:5,1:5]
+# Run PCA on Deng data. Use the runPCA function from the SingleCellExperiment package.
+deng_SCE <- runPCA(deng_SCE, ncomponents = 50)
+
+# Use the reducedDim function to access the PCA and store the results. 
+pca <- reducedDim(deng_SCE, "PCA")
+
+# Describe how the PCA is stored in a matrix. Why does it have this structure?
+head(pca)
 ```
 
-    ##                HSPC_001 HSPC_002 HSPC_003 HSPC_004 HSPC_006
-    ## X1110032F04Rik 0.000000 0.000000 0.000000 0.000000 0.000000
-    ## X1110059E24Rik 0.000000 0.000000 2.795189 1.326478 7.348663
-    ## X1300017J02Rik 0.000000 0.000000 0.000000 0.000000 0.000000
-    ## X1600014C10Rik 0.000000 2.238601 0.000000 1.326478 4.946766
-    ## X1700017B05Rik 1.225439 2.238601 1.989360 2.005685 0.000000
+    ##                PC1       PC2        PC3         PC4        PC5         PC6
+    ## 16cell   -24.79868 -62.20826  -8.035201 -2.07391816 -2.1297390 -14.0930954
+    ## 16cell.1 -28.77121 -50.35974 -13.607012  0.08664449 -0.9454185  -3.5987880
+    ## 16cell.2 -26.67901 -61.03875  -7.239352 -6.60967794  1.0775002 -11.8876579
+    ## 16cell.3 -29.01151 -56.03620  -6.433057  2.85332708  4.2885083   0.1488504
+    ## 16cell.4 -26.38026 -58.09265  -4.671850  7.99519397 -9.8077416  -2.0570042
+    ## 16cell.5 -24.90566 -60.77897  -5.632497 -3.80156587 -9.8835527 -11.9028394
+    ##                 PC7        PC8        PC9       PC10       PC11       PC12
+    ## 16cell   -2.4645020  1.6350660  -7.202260  -9.862212 -10.660702  0.6401721
+    ## 16cell.1 -2.1726663 -3.3481641  -8.967394  -6.664942 -14.493227 11.7471565
+    ## 16cell.2  7.9007309  0.3368756  -6.032645  -5.295515 -15.384993  4.2930696
+    ## 16cell.3  4.3727592 -1.1582470  -1.520145   8.789699 -19.386866 -0.4999047
+    ## 16cell.4  0.6031572 -3.6743278  -5.793753 -10.823787  -7.613724  4.7288640
+    ## 16cell.5  4.3269009  3.8968881 -11.805221  -9.798854 -11.016137 19.1535086
+    ##               PC13      PC14      PC15       PC16       PC17       PC18
+    ## 16cell   -5.716841  6.544614  6.652210  -3.458346  -4.499013 -11.360753
+    ## 16cell.1 13.284708 -4.206404  8.721043  -7.926277  -0.703508  -5.418131
+    ## 16cell.2  9.633173  1.672498  9.609001  -9.302794 -10.219743  -5.763834
+    ## 16cell.3 14.177687 -8.509097  6.978210  10.771078  -6.188808   6.504081
+    ## 16cell.4  3.106382 -4.078414 10.739979 -12.032452  -6.239499   2.331292
+    ## 16cell.5  9.544362 -2.255400  8.614958  -2.832196  -1.798584   2.321082
+    ##                 PC19      PC20       PC21       PC22       PC23      PC24
+    ## 16cell     2.2617345 -2.456274 -11.227414 -1.7122827  -8.418641  4.254968
+    ## 16cell.1 -11.8613891  4.069530  -9.320831 -0.5802347 -11.878096 -6.412425
+    ## 16cell.2  -3.3460356  4.165813  -2.031473  2.1106373  -1.762218 -1.135134
+    ## 16cell.3  -0.6042649  6.008176  -9.982856 -9.4888653   2.822138 12.871921
+    ## 16cell.4   3.9402029 -0.298227 -10.773722  0.6374236   4.730329  4.670391
+    ## 16cell.5  -2.0280791  5.050525   3.252243  7.1527175  -9.923140 -1.791511
+    ##               PC25      PC26       PC27      PC28        PC29       PC30
+    ## 16cell   -4.049629  4.133374 -0.6235391 -3.381254 13.94917609  -8.217824
+    ## 16cell.1 -8.052083  8.334263 -0.5815629  4.592214  1.32417854   5.266909
+    ## 16cell.2 -2.326133  3.775858 -2.3388745 -6.947394  0.08121559  -2.942813
+    ## 16cell.3 -5.860750  1.869659  7.0402429  5.092207 -2.53575943 -18.529304
+    ## 16cell.4 -4.291113 13.005331  3.2802102  4.606226 -3.52531994  -3.599833
+    ## 16cell.5  4.708265  5.717693  1.1023767  9.761377 -4.57312078 -12.138646
+    ##                PC31       PC32        PC33      PC34       PC35       PC36
+    ## 16cell    -6.897320  -5.675943   8.6076039 -3.713348 -0.9099737  4.7467546
+    ## 16cell.1  -4.538307   9.166969  -9.4525575 -8.848231 -2.0782319  7.4318993
+    ## 16cell.2   3.082470  -2.207176   0.5365986 -3.895378  7.4493361  0.7465149
+    ## 16cell.3   1.680117  -3.839556 -13.3156066 -6.257479 -4.1112596  0.2780589
+    ## 16cell.4 -13.314741  -1.453554   0.1334034  2.941487 -0.8162660 -2.9940693
+    ## 16cell.5  -4.608498 -12.180530   5.8667454  6.645273  1.0224859  0.8960299
+    ##               PC37       PC38       PC39       PC40      PC41       PC42
+    ## 16cell   -9.063470 -5.2765051  1.1758453  -9.474215  3.559391 -4.7781174
+    ## 16cell.1 -6.217009  1.0216459  0.5798035 -21.705585 -3.570104  2.3279922
+    ## 16cell.2 -6.227582  3.0863112  8.6153521   1.401230  2.266017  0.8150665
+    ## 16cell.3 -8.411600  3.7169411 -0.7050601  -2.959623 -3.123082  1.0916370
+    ## 16cell.4  2.871774 -4.2664023 -7.4894594   8.207422  4.223035 -1.4763578
+    ## 16cell.5 10.169730  0.3923632 -9.3346900  -8.114487 11.186021 -4.5635674
+    ##                PC43      PC44       PC45      PC46        PC47      PC48
+    ## 16cell    7.9228097  8.558202  7.0589601 -3.058213   0.5723815  4.675859
+    ## 16cell.1 -5.6006755 -8.717056 -6.4809594 -8.554812  13.1868751  3.397683
+    ## 16cell.2 -5.2532880  5.803788  2.7268218 -1.241770  -7.4824426 -4.088268
+    ## 16cell.3  0.0513553  2.181424  2.4047798 -8.691231  -8.9700019 -3.713547
+    ## 16cell.4 -1.5501973 -4.946841  0.5207532  3.068228 -10.7801143  5.167618
+    ## 16cell.5  9.9821175  8.759947 -3.7277578  9.064882   1.7524451 -3.306568
+    ##               PC49       PC50
+    ## 16cell   -2.937621  3.5882779
+    ## 16cell.1 -3.419868 -3.4878920
+    ## 16cell.2  4.445723 -0.2352798
+    ## 16cell.3 -5.179552  9.7180911
+    ## 16cell.4 -1.077760  3.0507728
+    ## 16cell.5  5.018972  0.9282575
 
 ``` r
-dim(lognorm)
+dim(pca)
 ```
 
-    ## [1] 3991 1645
-
-Note that the count matrix is not filtered, and genes are labelled
-according to ensembl gene IDs. We will first filter the matrix according
-to the authors choices (ie. we keep the cells and genes present in the
-lognorm matrix) and we will map the gene official symbols.
-
-We filter the counts to keep only high quality cells:
+    ## [1] 268  50
 
 ``` r
-counts <- counts[ , colnames(lognorm) ]
-dim(counts)
+plotReducedDim(deng_SCE, dimred = "PCA",colour_by="cell_type2",ncomponents = (1:2))
 ```
 
-    ## [1] 46175  1645
+![](session-trajectories_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 
-We create an annotation data frame to label the cell types as defined by
-the authors:
+You could find PC1 and PC2 captured variances based on different
+development stages, let’s take a further look:
 
 ``` r
-pDat <- data.frame(cell=colnames(counts), celltype='undefined', stringsAsFactors=FALSE)
-rownames(pDat) <- pDat$cell
-pDat[ rownames(anno_table), 2] <- as.character(anno_table$celltype)
-head(pDat)
+# designed to capture differentiation processes. As a simple measure of pseudotime 
+# we can use the coordinates of PC1.
+# Plot PC1 vs cell_type2. 
+deng_SCE$PC1 <- pca[,1]
+deng_SCE$PC2 <- pca[,2]
+deng_SCE$pseudotime_PC1 <- rank(deng_SCE$PC1)  # rank cells by their PC1 score
+ggplot(as.data.frame(colData(deng_SCE)), aes(x = pseudotime_PC1, y = cell_type2, 
+                                             colour = cell_type2)) +
+    geom_quasirandom(groupOnX = FALSE) +
+    scale_color_tableau() + theme_classic() +
+    xlab("PC1") + ylab("Timepoint") +
+    ggtitle("Cells ordered by first principal component")
 ```
 
-    ##              cell  celltype
-    ## HSPC_001 HSPC_001 undefined
-    ## HSPC_002 HSPC_002 undefined
-    ## HSPC_003 HSPC_003 undefined
-    ## HSPC_004 HSPC_004 undefined
-    ## HSPC_006 HSPC_006 undefined
-    ## HSPC_008 HSPC_008 undefined
+    ## Orientation inferred to be along y-axis; override with
+    ## `position_quasirandom(orientation = 'x')`
 
-We create a feature annotation data frame that will contain gene
-informations and matching symbols and IDs. The genes IDs in the counts
-matrix are annotated using the biomaRt Bioconductor package:
+![](session-trajectories_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
 
 ``` r
-mart <- biomaRt::useDataset("mmusculus_gene_ensembl", biomaRt::useMart("ensembl"))
-genes_table <- biomaRt::getBM(attributes=c("ensembl_gene_id", "external_gene_name"), values=rownames(counts), mart=mart,useCache = FALSE)
-rownames(genes_table) <- genes_table$ensembl_gene_id
-head(genes_table)
+# Try separating the cell types using other PCs. How does the separation look?
+plotReducedDim(deng_SCE, dimred = "PCA",colour_by="cell_type2",ncomponents = (2:3))
 ```
 
-    ##                       ensembl_gene_id external_gene_name
-    ## ENSMUSG00000064336 ENSMUSG00000064336              mt-Tf
-    ## ENSMUSG00000064337 ENSMUSG00000064337            mt-Rnr1
-    ## ENSMUSG00000064338 ENSMUSG00000064338              mt-Tv
-    ## ENSMUSG00000064339 ENSMUSG00000064339            mt-Rnr2
-    ## ENSMUSG00000064340 ENSMUSG00000064340             mt-Tl1
-    ## ENSMUSG00000064341 ENSMUSG00000064341             mt-Nd1
+![](session-trajectories_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+
+## Slingshot map pseudotime
+
+Let us see how another advance trajectory inference method, Slingshot,
+performs at placing cells along the expected differentiation trajectory.
 
 ``` r
-fDat <- genes_table[ rownames(counts), ]
-# to be consistent with Monocle naming conventions
-colnames(fDat) <- c('ensembl_gene_id', 'gene_short_name')
-head(fDat)
+sce <- slingshot(deng_SCE, reducedDim = 'PCA')  # no clusters provided
 ```
 
-    ##                       ensembl_gene_id gene_short_name
-    ## ENSMUSG00000000001 ENSMUSG00000000001           Gnai3
-    ## ENSMUSG00000000003 ENSMUSG00000000003            Pbsn
-    ## ENSMUSG00000000028 ENSMUSG00000000028           Cdc45
-    ## ENSMUSG00000000031 ENSMUSG00000000031             H19
-    ## ENSMUSG00000000037 ENSMUSG00000000037           Scml2
-    ## ENSMUSG00000000049 ENSMUSG00000000049            Apoh
-
-We can now use this table to filter the genes in the counts matrix that
-are highly expressed according to the quality filters used by the
-authors:
+    ## No cluster labels provided. Continuing with one cluster.
 
 ``` r
-fDat <- fDat[fDat$gene_short_name %in% rownames(lognorm), ]
+# Plot PC1 vs PC2 colored by Slingshot pseudotime.
+colors <- rainbow(50, alpha = 1)
+plot(reducedDims(sce)$PCA, col = colors[cut(sce$slingPseudotime_1,breaks=50)], pch=16, asp = 1)
+lines(SlingshotDataSet(sce), lwd=2)
 ```
 
-And we finally keep in the counts matrix only these genes:
+![](session-trajectories_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+Let’s order cells based on the pseudotime from Slingshot:
 
 ``` r
-counts <- counts[ rownames(fDat), ]
-dim(counts)
+slingshot_df <- data.frame(colData(sce)[, names(colData(sce)) != 'slingshot', drop=FALSE])
+
+# Plot Slingshot pseudotime vs cell stage. 
+ggplot(slingshot_df, aes(x = sce$slingPseudotime_1, y = cell_type2, 
+                              colour = cell_type2)) +
+    geom_quasirandom(groupOnX = FALSE) +
+    scale_color_tableau() + theme_classic() +
+    xlab("Slingshot pseudotime") + ylab("Timepoint") +
+    ggtitle("Cells ordered by Slingshot pseudotime")
 ```
 
-    ## [1] 3753 1645
+    ## Orientation inferred to be along y-axis; override with
+    ## `position_quasirandom(orientation = 'x')`
+
+![](session-trajectories_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+
+Next, we are gonna re-clustered the data and run Slingshot again to see
+if they still align with the known cluster labels in the data.
 
 ``` r
-dim(fDat)
+# Cluster cells using the Seurat workflow below.
+gcdata <- CreateSeuratObject(counts = counts(deng_SCE), project = "slingshot")
 ```
 
-    ## [1] 3753    2
+    ## Warning: Feature names cannot have pipe characters ('|'), replacing with dashes
+    ## ('-')
 
 ``` r
-dim(pDat)
+gcdata <- NormalizeData(gcdata, normalization.method = "LogNormalize", scale.factor = 10000)
+gcdata <- FindVariableFeatures(gcdata, selection.method = "vst", nfeatures = 2000)
+gcdata <- ScaleData(object = gcdata, do.center = T, do.scale = F)
 ```
 
-    ## [1] 1645    2
-
-We build a cell dataset object in an appropriate format for Monocle.
-Default method for modeling the expression values is
-`VGAM::negbinomial.size()` and is adapted to counts.
+    ## Centering data matrix
 
 ``` r
-cds <- newCellDataSet(as.matrix(counts), phenoData=Biobase::AnnotatedDataFrame(pDat), featureData=Biobase::AnnotatedDataFrame(fDat))
-cds
+gcdata <- RunPCA(gcdata, features = VariableFeatures(gcdata), npcs = 40, ndims.print = 1:5, nfeatures.print = 5)
 ```
 
-    ## CellDataSet (storageMode: environment)
-    ## assayData: 3753 features, 1645 samples 
-    ##   element names: exprs 
-    ## protocolData: none
-    ## phenoData
-    ##   sampleNames: HSPC_001 HSPC_002 ... Prog_852 (1645 total)
-    ##   varLabels: cell celltype Size_Factor
-    ##   varMetadata: labelDescription
-    ## featureData
-    ##   featureNames: ENSMUSG00000000001 ENSMUSG00000000028 ...
-    ##     ENSMUSG00000105504 (3753 total)
-    ##   fvarLabels: ensembl_gene_id gene_short_name
-    ##   fvarMetadata: labelDescription
-    ## experimentData: use 'experimentData(object)'
-    ## Annotation:
-
-#### Trajectory inference
-
-The monocle cds object is built and ready for trajectory inference.
+    ## PC_ 1 
+    ## Positive:  Actb, Fabp3, Psap, Akr1b8, Krt18 
+    ## Negative:  Zbed3, C86187, Klf17, Btg4, Ccdc6 
+    ## PC_ 2 
+    ## Positive:  Krt18, Id2, Akr1b8, BC053393, Fabp3 
+    ## Negative:  Gm11517, Alppl2, Obox6, Pdxk, Trim43b 
+    ## PC_ 3 
+    ## Positive:  Id2, Krt18, Tspan8, BC053393, Krt8 
+    ## Negative:  Gm11517, Alppl2, Ypel5, Pdxk, Fam46c 
+    ## PC_ 4 
+    ## Positive:  Alppl2, Dab2, Gm11517, Krt18, Tspan8 
+    ## Negative:  Upp1, Tdgf1, Spp1, Zfp57, Tat 
+    ## PC_ 5 
+    ## Positive:  Klf17, Ddx24, Bod1l, Tor1b, Gm1995 
+    ## Negative:  Alppl2, Gm4340, Gm11756, Gm8300, Gm5039
 
 ``` r
-dir.create('monocle', showWarnings=FALSE)
-saveRDS(cds, 'monocle/cds_hematopoiesis.rds')
-
-# Monocle2 preprocess
-# normalization and scaling
-cds <- estimateSizeFactors(cds)
-cds <- estimateDispersions(cds)
+# Cluster the cells using the first twenty principal components.
+gcdata <- FindNeighbors(gcdata, reduction = "pca", dims = 1:20, k.param = 20)
 ```
 
-We find the genes that are expressed by applying a filter based on a
-minimum expression threshold.
+    ## Computing nearest neighbor graph
+
+    ## Computing SNN
 
 ``` r
-cds <- detectGenes(cds, min_expr=0.1)
-print(head(fData(cds)))
+gcdata <- FindClusters(gcdata, resolution = 0.8, algorithm = 1, random.seed = 100)
 ```
 
-    ##                       ensembl_gene_id gene_short_name num_cells_expressed
-    ## ENSMUSG00000000001 ENSMUSG00000000001           Gnai3                1613
-    ## ENSMUSG00000000028 ENSMUSG00000000028           Cdc45                1438
-    ## ENSMUSG00000000056 ENSMUSG00000000056            Narf                1333
-    ## ENSMUSG00000000058 ENSMUSG00000000058            Cav2                 577
-    ## ENSMUSG00000000078 ENSMUSG00000000078            Klf6                1560
-    ## ENSMUSG00000000127 ENSMUSG00000000127             Fer                 578
-
-We then identify genes that are expressed in at least 10 cells.
+    ## Modularity Optimizer version 1.3.0 by Ludo Waltman and Nees Jan van Eck
+    ## 
+    ## Number of nodes: 268
+    ## Number of edges: 6814
+    ## 
+    ## Running Louvain algorithm...
+    ## Maximum modularity in 10 random starts: 0.7647
+    ## Number of communities: 6
+    ## Elapsed time: 0 seconds
 
 ``` r
-expressed_genes <- row.names(subset(fData(cds), num_cells_expressed >= 10))
-length(expressed_genes)
+# Add clustering information from Seurat to the deng_SCE object
+colData(deng_SCE)$Seurat_clusters <- as.character(Idents(gcdata))
 ```
 
-    ## [1] 3752
-
-Identification of the ordering genes by differential testing (likelihood
-ratio test) i.e. genes that are presumed to be important in the
-differentiation process captured in the sample. We used the cell types
-identified by the authors to define the ordering genes by DE testing.
-(Alternatively, a classical approach consist of clustering the cells,
-then identify markers genes per clusters.)
-
 ``` r
-diff_test_res <- differentialGeneTest(cds[ expressed_genes, ], fullModelFormulaStr="~ celltype")
-ordering_genes <- row.names(subset(diff_test_res, qval < 0.01))
-length(ordering_genes)
+plotReducedDim(deng_SCE, dimred = "PCA",color_by="cell_type2",shape_by="Seurat_clusters",ncomponents = (1:2))
 ```
 
-    ## [1] 678
-
-We mark the genes that will be used for the ordering :
+![](session-trajectories_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
 
 ``` r
-cds <- setOrderingFilter(cds, ordering_genes)
+# Then run Slingshot using these cluster assignments.
+sce2 <- slingshot(deng_SCE, clusterLabels = 'Seurat_clusters', reducedDim = 'PCA')
+
+# Plot PC1 vs PC2 colored by Slingshot pseudotime.
+colors <- rainbow(50, alpha = 1)
+plot(reducedDims(sce2)$PCA, col = colors[cut(sce2$slingPseudotime_1,breaks=50)], pch=16, asp = 1)
+lines(SlingshotDataSet(sce2), lwd=2, type = 'lineages', col = 'black')
 ```
 
-We use the DDRTree algorithm to infer a trajectory with potential
-branching points.
+![](session-trajectories_files/figure-gfm/unnamed-chunk-14-1.png)<!-- -->
 
 ``` r
-cds <- reduceDimension(cds, max_components = 2, method='DDRTree')
-cds <- orderCells(cds)
-plot_cell_trajectory(cds, color_by="celltype")
+## Checking the linkage information
+SlingshotDataSet(sce2)
+```
+
+    ## class: SlingshotDataSet 
+    ## 
+    ##  Samples Dimensions
+    ##      268         50
+    ## 
+    ## lineages: 1 
+    ## Lineage1: 3  2  4  0  1  5  
+    ## 
+    ## curves: 1 
+    ## Curve1: Length: 392.79   Samples: 268
+
+``` r
+slingshot_df2 <- data.frame(colData(sce2)[, names(colData(sce2)) != 'slingshot', drop=FALSE])
+
+slingshot_df2$Seurat_clusters <- factor(slingshot_df2$Seurat_clusters,
+                              levels = c("3", "2", "4", "0", 
+                                         "1", "5"))
+
+# Plot Slingshot pseudotime vs cell stage. 
+ggplot(slingshot_df2, aes(x = slingPseudotime_1, y = Seurat_clusters, 
+                              colour = cell_type2)) +
+    geom_quasirandom(groupOnX = FALSE) +
+    scale_color_tableau() + theme_classic() +
+    xlab("Slingshot pseudotime") + ylab("Timepoint") +
+    ggtitle("Cells ordered by Slingshot pseudotime")
+```
+
+    ## Orientation inferred to be along y-axis; override with
+    ## `position_quasirandom(orientation = 'x')`
+
+![](session-trajectories_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
+
+``` r
+deng_SCE$cell_type2 <- factor(deng_SCE$cell_type2,
+                              levels = c("zy", "early2cell", "mid2cell", "late2cell", 
+                                         "4cell", "8cell", "16cell", "earlyblast",
+                                         "midblast", "lateblast"))
+
+slingshot_df2 <- data.frame(colData(sce2)[, names(colData(sce2)) != 'slingshot', drop=FALSE])
+
+# Plot Slingshot pseudotime vs cell stage. 
+ggplot(slingshot_df2, aes(x = slingPseudotime_1, y = cell_type2, 
+                              colour = cell_type2)) +
+    geom_quasirandom(groupOnX = FALSE) +
+    scale_color_tableau() + theme_classic() +
+    xlab("Slingshot pseudotime") + ylab("Timepoint") +
+    ggtitle("Cells ordered by Slingshot pseudotime")
+```
+
+    ## Orientation inferred to be along y-axis; override with
+    ## `position_quasirandom(orientation = 'x')`
+
+![](session-trajectories_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
+
+## Identifying temporally dynamic genes
+
+After running slingshot, we are often interested in finding genes that
+change their expression over the course of development. We will
+demonstrate this type of analysis using the tradeSeq package ([Van den
+Berge et al. 2020](https://www.nature.com/articles/s41467-020-14766-3)).
+
+For each gene, we will fit a general additive model (GAM) using a
+negative binomial noise distribution to model the (potentially
+nonlinear) relationships between gene expression and pseudotime. We will
+then test for significant associations between expression and pseudotime
+using the associationTest.
+
+Here, we are only chosing ~160 highly variable genes to run the GAM due
+to the computational time. You should use all the genes during your
+analysis.
+
+``` r
+## Selecting highly variable genes
+hvg <- modelGeneVar(sce)
+chosen <- getTopHVGs(hvg, prop=0.02)
+sce <- sce[chosen,]
+
+# fit negative binomial GAM
+sce <- fitGAM(sce)
+
+# test for dynamic expression
+ATres <- associationTest(sce)
+```
+
+Next, we visualize these genes in a heatmap with the order of the
+pseudotime:
+
+``` r
+topgenes <- rownames(ATres[order(ATres$pvalue), ])
+pst.ord <- order(sce$slingPseudotime_1, na.last = NA)
+heatdata <- assays(sce)$counts[topgenes, pst.ord]
+heatclus <- sce$cell_type2[pst.ord]
+
+heatmap(log1p(heatdata), Colv = NA,
+        ColSideColors = brewer.pal(9,"Set1")[heatclus])
+```
+
+![](session-trajectories_files/figure-gfm/unnamed-chunk-19-1.png)<!-- -->
+
+Based on the heatmap, you could find temporally dynamic genes across
+diffrent development stage, let’s visualize some genes as example:
+
+``` r
+p1=plotExpression(deng_SCE, features = "Ccne1", x = "cell_type2",colour_by="cell_type2",exprs_values = "logcounts") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p2=plotReducedDim(deng_SCE, dimred = "PCA",color_by="Ccne1",ncomponents = (1:2))
+p1+p2
 ```
 
 ![](session-trajectories_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
 
 ``` r
-# Changing the cell color 
-cell_colors <-  c('lightblue','blue','red','black','orange','yellow','turquoise','lightgrey')
-plot_cell_trajectory(cds, color_by="celltype") + scale_color_manual(values=cell_colors)
+p1=plotExpression(deng_SCE, features = "Stac2", x = "cell_type2",colour_by="cell_type2",exprs_values = "logcounts") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p2=plotReducedDim(deng_SCE, dimred = "PCA",color_by="Stac2",ncomponents = (1:2))
+p1+p2
 ```
 
 ![](session-trajectories_files/figure-gfm/unnamed-chunk-21-1.png)<!-- -->
 
-The most immature HSCs in the sample express E-Slam. We will define the
-root of this model according to this subset of cells:
-
 ``` r
-table(pData(cds)$State, pData(cds)$celltype)[,"ESLAM"]
+p1=plotExpression(deng_SCE, features = "Tmem180", x = "cell_type2",colour_by="cell_type2",exprs_values = "logcounts") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p2=plotReducedDim(deng_SCE, dimred = "PCA",color_by="Tmem180",ncomponents = (1:2))
+p1+p2
 ```
 
-    ##  1  2  3 
-    ##  0 10  0
-
-State 1 defines the root in the model as it contains all 10 of the
-E-Slam-expressing cells. Note that Monocle might return a different
-state number containing these cells. Simply pass the correct state
-number to the `orderCells` function:
-
-``` r
-cds <- orderCells(cds, root_state = 2)
-```
-
-The pseudotime is now defined by the distance to the root:
-
-``` r
-plot_cell_trajectory(cds, color_by = "Pseudotime")
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-24-1.png)<!-- -->
-
-#### Differential expression testing per branch
-
-This time we look at the genes that are differentially expressed
-according to the pseudotime model.
-
-``` r
-diff_test_res <- differentialGeneTest(cds[ ordering_genes, ], fullModelFormulaStr = "~sm.ns(Pseudotime)")
-sig_gene_names <- row.names(subset(diff_test_res, qval < 0.1))
-plot_pseudotime_heatmap(cds[ sig_gene_names[1:50], ], num_clusters = 3, cores=4, show_rownames=TRUE)
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-25-1.png)<!-- -->
-
-Differential expression per branch is done with a specific test:
-Branched expression analysis modeling (BEAM). The test compares two
-models with a likelihood ratio test for branch-dependent expression. The
-full model is the product of smooth Pseudotime and the Branch a cell is
-assigned to. The reduced model just includes Pseudotime. We look for
-genes involved in the erythroid pathway
-
-``` r
-BEAM_res <- BEAM(cds, branch_point = 1, cores = 4)
-```
-
-``` r
-BEAM_res <- BEAM_res[order(BEAM_res$qval),]
-BEAM_res <- BEAM_res[,c("gene_short_name", "pval", "qval")]
-head(BEAM_res)
-```
-
-    ##                    gene_short_name pval qval
-    ## ENSMUSG00000004655            Aqp1    0    0
-    ## ENSMUSG00000009350             Mpo    0    0
-    ## ENSMUSG00000016494            Cd34    0    0
-    ## ENSMUSG00000018819            Lsp1    0    0
-    ## ENSMUSG00000020125           Elane    0    0
-    ## ENSMUSG00000021728             Emb    0    0
-
-``` r
-plot_genes_branched_heatmap(cds[row.names(BEAM_res)[1:50]], branch_point = 1, num_clusters = 3, cores=4, use_gene_short_name=TRUE, show_rownames=TRUE)
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-28-1.png)<!-- -->
-
-There is a clear separation between genes that are involved in the
-erythroid differentiation (eg. Gata1) on the left (cell fate1) with
-genes involved in the leukocyte differentiation (eg. Sell, Ccl9).
-
-``` r
-plot_genes_branched_pseudotime(cds[row.names(BEAM_res)[1:5]], branch_point = 1, color_by = "celltype", ncol = 1)  + scale_color_manual(values=cell_colors)
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-29-1.png)<!-- -->
-
-## Part II - Diffusion map
-
-``` r
-# Analysis and inference done with the destiny package available via Bioconductor
-
-# Trajectory inference by diffusion map an diffusion pseudotime
-
-library(destiny)
-library(ggplot2)
-library(gridExtra)
-```
-
-#### Data loading
-
-We now will directly use the filtered, scaled, log-normalised expression
-matrix provided by the authors of the article.
-
-``` r
-lognorm <- t(read.table('data/nestorowa_corrected_log2_transformed_counts.txt', sep=" ", header=TRUE))
-lognorm[1:5,1:5]
-```
-
-    ##                HSPC_001 HSPC_002 HSPC_003 HSPC_004 HSPC_006
-    ## X1110032F04Rik 0.000000 0.000000 0.000000 0.000000 0.000000
-    ## X1110059E24Rik 0.000000 0.000000 2.795189 1.326478 7.348663
-    ## X1300017J02Rik 0.000000 0.000000 0.000000 0.000000 0.000000
-    ## X1600014C10Rik 0.000000 2.238601 0.000000 1.326478 4.946766
-    ## X1700017B05Rik 1.225439 2.238601 1.989360 2.005685 0.000000
-
-We load the annotation of cell types that has been defined using flow
-cytometry and index sorting. The cell subsets (final differentiation
-stages) will be used to validate the trajectory model.
-
-``` r
-anno_table <- read.table('data/nestorowa_corrected_population_annotation.txt')
-pDat <- data.frame(cell=colnames(lognorm), celltype='undefined', stringsAsFactors=FALSE)
-rownames(pDat) <- pDat$cell
-pDat[ rownames(anno_table), 2] <- as.character(anno_table$celltype)
-```
-
-We build an expression set object for an easier integration with
-destiny:
-
-``` r
-eset <- Biobase::ExpressionSet(lognorm, phenoData=Biobase::AnnotatedDataFrame(pDat))
-eset
-```
-
-    ## ExpressionSet (storageMode: lockedEnvironment)
-    ## assayData: 3991 features, 1645 samples 
-    ##   element names: exprs 
-    ## protocolData: none
-    ## phenoData
-    ##   sampleNames: HSPC_001 HSPC_002 ... Prog_852 (1645 total)
-    ##   varLabels: cell celltype
-    ##   varMetadata: labelDescription
-    ## featureData: none
-    ## experimentData: use 'experimentData(object)'
-    ## Annotation:
-
-The expression set is ready for inference with destiny:
-
-``` r
-dir.create('destiny', showWarnings=FALSE)
-saveRDS(eset, 'destiny/eset_hematopoiesis.rds')
-```
-
-``` r
-# The process takes less than 60 seconds
-dmap <- DiffusionMap(eset)
-
-# We look at the global model
-plot.DiffusionMap(dmap)
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-35-1.png)<!-- -->
-
-``` r
-p1 <- plot.DiffusionMap(dmap, dims=c(1,2)) 
-p2 <- plot.DiffusionMap(dmap, dims=c(2,3))
-p3 <- plot.DiffusionMap(dmap, dims=c(1,3))
-grid.arrange(p1, p2, p3, nrow = 1)
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-36-1.png)<!-- -->
-
-Components 1-2 describe well the branching process between erythroid
-(red) and myeloid/lymphoid (white) lineages.
-
-We use ggplot2 to have a better rendering and project the cell labels as
-defined by flow cytometry experiment and index sorting.
-
-``` r
-qplot(DC1, DC2, data=as.data.frame(dmap), colour=celltype) + 
-  scale_color_manual(values=c('lightblue','brown','red','black','orange','yellow','blue','lightgrey')) + 
-  theme(panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(), 
-        panel.background = element_blank(), 
-        axis.line = element_line(colour = "black"))
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-37-1.png)<!-- -->
-
-#### Pseudotime inference by diffusion
-
-The transcriptional distance between cells is estimated by random walk
-along a neighborhood graph. The resulting “transcriptional” transition
-probability between cells is used to infer a pseudo-time scale of the
-differentiation process.
-
-We first define a root cell (origin) for the model. We find the index of
-a ESLAM positive cells:
-
-``` r
-which(anno_table$celltype=="ESLAM")
-```
-
-    ##  [1] 19 20 21 22 23 24 25 26 27 28
-
-We use this cell as a starting point
-
-``` r
-dpt <- DPT(dmap, tips=19)
-plot(dpt)
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-39-1.png)<!-- -->
-
-We can project the level of expression of known marker genes on the
-trajectory model. Procr / Endothelial protein C is a marker of HSC
-subsets:
-
-``` r
-plot(dpt, col_by='Procr', pal=viridis::magma)
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-40-1.png)<!-- -->
-
-Gata1 is a key TF of the erythroid lineage
-
-``` r
-plot(dpt, col_by='Gata1', pal=viridis::magma)
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-41-1.png)<!-- -->
-
-Cathepsin G is a marker of neutrophils
-
-``` r
-plot(dpt, col_by='Ctsg', pal=viridis::magma)
-```
-
-![](session-trajectories_files/figure-gfm/unnamed-chunk-42-1.png)<!-- -->
+![](session-trajectories_files/figure-gfm/unnamed-chunk-22-1.png)<!-- -->
+Here, we are using a simple dataset with only 268 cells, which is why we
+only got one linkage in the dataset, if you want to explore larger
+dataset with multiple linkages with Slingshot, please check
+[here](https://nbisweden.github.io/workshop-scRNAseq/labs/trajectory/slingshot.html)
 
 ``` r
 sessionInfo()
 ```
 
-    ## R version 3.6.3 (2020-02-29)
+    ## R version 4.3.1 (2023-06-16)
     ## Platform: x86_64-pc-linux-gnu (64-bit)
-    ## Running under: Ubuntu 20.04.5 LTS
+    ## Running under: Ubuntu 20.04.6 LTS
     ## 
     ## Matrix products: default
-    ## BLAS:   /usr/lib/x86_64-linux-gnu/atlas/libblas.so.3.10.3
-    ## LAPACK: /usr/lib/x86_64-linux-gnu/atlas/liblapack.so.3.10.3
+    ## BLAS:   /usr/lib/x86_64-linux-gnu/atlas/libblas.so.3.10.3 
+    ## LAPACK: /usr/lib/x86_64-linux-gnu/atlas/liblapack.so.3.10.3;  LAPACK version 3.9.0
     ## 
     ## locale:
     ##  [1] LC_CTYPE=C.UTF-8       LC_NUMERIC=C           LC_TIME=C.UTF-8       
@@ -543,79 +459,92 @@ sessionInfo()
     ##  [7] LC_PAPER=C.UTF-8       LC_NAME=C              LC_ADDRESS=C          
     ## [10] LC_TELEPHONE=C         LC_MEASUREMENT=C.UTF-8 LC_IDENTIFICATION=C   
     ## 
+    ## time zone: UTC
+    ## tzcode source: system (glibc)
+    ## 
     ## attached base packages:
-    ##  [1] splines   stats4    parallel  stats     graphics  grDevices utils    
-    ##  [8] datasets  methods   base     
+    ## [1] stats4    stats     graphics  grDevices utils     datasets  methods  
+    ## [8] base     
     ## 
     ## other attached packages:
-    ##  [1] gridExtra_2.3       destiny_3.0.1       biomaRt_2.42.1     
-    ##  [4] monocle_2.22.0      DDRTree_0.1.5       irlba_2.3.5.1      
-    ##  [7] VGAM_1.1-7          ggplot2_3.3.6       Biobase_2.46.0     
-    ## [10] BiocGenerics_0.32.0 Matrix_1.5-1       
+    ##  [1] slingshot_2.8.0             TrajectoryUtils_1.8.0      
+    ##  [3] princurve_2.1.6             tradeSeq_1.14.0            
+    ##  [5] scran_1.28.2                scater_1.28.0              
+    ##  [7] scuttle_1.10.2              RColorBrewer_1.1-3         
+    ##  [9] cowplot_1.1.1               dplyr_1.1.3                
+    ## [11] ggthemes_4.2.4              ggbeeswarm_0.7.2           
+    ## [13] ggplot2_3.4.3               SeuratObject_4.1.4         
+    ## [15] Seurat_4.4.0                SingleCellExperiment_1.22.0
+    ## [17] SummarizedExperiment_1.30.2 Biobase_2.60.0             
+    ## [19] GenomicRanges_1.52.0        GenomeInfoDb_1.36.4        
+    ## [21] IRanges_2.34.1              S4Vectors_0.38.2           
+    ## [23] BiocGenerics_0.46.0         MatrixGenerics_1.12.3      
+    ## [25] matrixStats_1.0.0          
     ## 
     ## loaded via a namespace (and not attached):
-    ##   [1] BiocFileCache_1.10.2        RcppEigen_0.3.3.9.2        
-    ##   [3] plyr_1.8.7                  igraph_1.3.5               
-    ##   [5] sp_1.5-0                    RcppHNSW_0.4.1             
-    ##   [7] BiocParallel_1.20.1         densityClust_0.3.2         
-    ##   [9] GenomeInfoDb_1.22.1         fastICA_1.2-2              
-    ##  [11] digest_0.6.29               htmltools_0.5.3            
-    ##  [13] viridis_0.6.2               fansi_1.0.3                
-    ##  [15] magrittr_2.0.3              memoise_2.0.1              
-    ##  [17] cluster_2.1.0               limma_3.42.2               
-    ##  [19] matrixStats_0.62.0          docopt_0.7.1               
-    ##  [21] xts_0.12.1                  askpass_1.1                
-    ##  [23] prettyunits_1.1.1           colorspace_2.0-3           
-    ##  [25] blob_1.2.3                  rappdirs_0.3.3             
-    ##  [27] ggrepel_0.9.1               xfun_0.33                  
-    ##  [29] dplyr_1.0.10                sparsesvd_0.2-1            
-    ##  [31] crayon_1.5.2                RCurl_1.98-1.9             
-    ##  [33] hexbin_1.28.2               zoo_1.8-11                 
-    ##  [35] glue_1.6.2                  gtable_0.3.1               
-    ##  [37] zlibbioc_1.32.0             XVector_0.26.0             
-    ##  [39] DelayedArray_0.12.3         car_3.1-0                  
-    ##  [41] SingleCellExperiment_1.8.0  DEoptimR_1.0-11            
-    ##  [43] abind_1.4-5                 VIM_6.2.2                  
-    ##  [45] scales_1.2.1                ggplot.multistats_1.0.0    
-    ##  [47] pheatmap_1.0.12             DBI_1.1.3                  
-    ##  [49] ggthemes_4.2.4              Rcpp_1.0.9                 
-    ##  [51] viridisLite_0.4.1           progress_1.2.2             
-    ##  [53] laeken_0.5.2                bit_4.0.4                  
-    ##  [55] proxy_0.4-27                vcd_1.4-10                 
-    ##  [57] httr_1.4.4                  FNN_1.1.3.1                
-    ##  [59] RColorBrewer_1.1-3          ellipsis_0.3.2             
-    ##  [61] pkgconfig_2.0.3             XML_3.99-0.3               
-    ##  [63] farver_2.1.1                nnet_7.3-12                
-    ##  [65] dbplyr_2.2.1                utf8_1.2.2                 
-    ##  [67] tidyselect_1.1.2            labeling_0.4.2             
-    ##  [69] rlang_1.0.6                 reshape2_1.4.4             
-    ##  [71] AnnotationDbi_1.48.0        munsell_0.5.0              
-    ##  [73] tools_3.6.3                 cachem_1.0.6               
-    ##  [75] cli_3.4.1                   generics_0.1.3             
-    ##  [77] RSQLite_2.2.18              ranger_0.14.1              
-    ##  [79] evaluate_0.16               stringr_1.4.1              
-    ##  [81] fastmap_1.1.0               yaml_2.3.5                 
-    ##  [83] knitr_1.40                  bit64_4.0.5                
-    ##  [85] robustbase_0.95-0           purrr_0.3.5                
-    ##  [87] RANN_2.6.1                  slam_0.1-50                
-    ##  [89] compiler_3.6.3              rstudioapi_0.14            
-    ##  [91] curl_4.3.2                  e1071_1.7-11               
-    ##  [93] knn.covertree_1.0           smoother_1.1               
-    ##  [95] tibble_3.1.8                stringi_1.7.8              
-    ##  [97] highr_0.9                   RSpectra_0.16-1            
-    ##  [99] lattice_0.20-38             HSMMSingleCell_1.6.0       
-    ## [101] vctrs_0.4.2                 pillar_1.8.1               
-    ## [103] lifecycle_1.0.2             combinat_0.0-8             
-    ## [105] lmtest_0.9-40               data.table_1.14.2          
-    ## [107] bitops_1.0-7                GenomicRanges_1.38.0       
-    ## [109] R6_2.5.1                    pcaMethods_1.78.0          
-    ## [111] IRanges_2.20.2              codetools_0.2-16           
-    ## [113] boot_1.3-24                 MASS_7.3-51.5              
-    ## [115] assertthat_0.2.1            SummarizedExperiment_1.16.1
-    ## [117] openssl_2.0.3               withr_2.5.0                
-    ## [119] qlcMatrix_0.9.7             S4Vectors_0.24.4           
-    ## [121] GenomeInfoDbData_1.2.2      hms_1.1.2                  
-    ## [123] grid_3.6.3                  tidyr_1.2.1                
-    ## [125] class_7.3-15                rmarkdown_2.16             
-    ## [127] carData_3.0-5               Rtsne_0.16                 
-    ## [129] TTR_0.24.3                  scatterplot3d_0.3-42
+    ##   [1] RcppAnnoy_0.0.21          splines_4.3.1            
+    ##   [3] later_1.3.1               bitops_1.0-7             
+    ##   [5] tibble_3.2.1              polyclip_1.10-6          
+    ##   [7] lifecycle_1.0.3           edgeR_3.42.4             
+    ##   [9] globals_0.16.2            lattice_0.21-8           
+    ##  [11] MASS_7.3-60               magrittr_2.0.3           
+    ##  [13] limma_3.56.2              plotly_4.10.2            
+    ##  [15] rmarkdown_2.25            yaml_2.3.7               
+    ##  [17] metapod_1.8.0             httpuv_1.6.11            
+    ##  [19] sctransform_0.4.0         sp_2.0-0                 
+    ##  [21] spatstat.sparse_3.0-2     reticulate_1.32.0        
+    ##  [23] pbapply_1.7-2             abind_1.4-5              
+    ##  [25] zlibbioc_1.46.0           Rtsne_0.16               
+    ##  [27] purrr_1.0.2               RCurl_1.98-1.12          
+    ##  [29] GenomeInfoDbData_1.2.10   ggrepel_0.9.3            
+    ##  [31] irlba_2.3.5.1             listenv_0.9.0            
+    ##  [33] spatstat.utils_3.0-3      goftest_1.2-3            
+    ##  [35] spatstat.random_3.1-6     dqrng_0.3.1              
+    ##  [37] fitdistrplus_1.1-11       parallelly_1.36.0        
+    ##  [39] DelayedMatrixStats_1.22.6 leiden_0.4.3             
+    ##  [41] codetools_0.2-19          DelayedArray_0.26.7      
+    ##  [43] tidyselect_1.2.0          farver_2.1.1             
+    ##  [45] ScaledMatrix_1.8.1        viridis_0.6.4            
+    ##  [47] spatstat.explore_3.2-3    jsonlite_1.8.7           
+    ##  [49] BiocNeighbors_1.18.0      ellipsis_0.3.2           
+    ##  [51] progressr_0.14.0          ggridges_0.5.4           
+    ##  [53] survival_3.5-5            tools_4.3.1              
+    ##  [55] ica_1.0-3                 Rcpp_1.0.11              
+    ##  [57] glue_1.6.2                gridExtra_2.3            
+    ##  [59] xfun_0.40                 mgcv_1.8-42              
+    ##  [61] withr_2.5.1               fastmap_1.1.1            
+    ##  [63] bluster_1.10.0            fansi_1.0.4              
+    ##  [65] digest_0.6.33             rsvd_1.0.5               
+    ##  [67] R6_2.5.1                  mime_0.12                
+    ##  [69] colorspace_2.1-0          scattermore_1.2          
+    ##  [71] tensor_1.5                spatstat.data_3.0-1      
+    ##  [73] utf8_1.2.3                tidyr_1.3.0              
+    ##  [75] generics_0.1.3            data.table_1.14.8        
+    ##  [77] httr_1.4.7                htmlwidgets_1.6.2        
+    ##  [79] S4Arrays_1.0.6            uwot_0.1.16              
+    ##  [81] pkgconfig_2.0.3           gtable_0.3.4             
+    ##  [83] lmtest_0.9-40             XVector_0.40.0           
+    ##  [85] htmltools_0.5.6           scales_1.2.1             
+    ##  [87] png_0.1-8                 knitr_1.44               
+    ##  [89] rstudioapi_0.15.0         reshape2_1.4.4           
+    ##  [91] nlme_3.1-162              zoo_1.8-12               
+    ##  [93] stringr_1.5.0             KernSmooth_2.23-21       
+    ##  [95] parallel_4.3.1            miniUI_0.1.1.1           
+    ##  [97] vipor_0.4.5               pillar_1.9.0             
+    ##  [99] grid_4.3.1                vctrs_0.6.3              
+    ## [101] RANN_2.6.1                promises_1.2.1           
+    ## [103] BiocSingular_1.16.0       beachmat_2.16.0          
+    ## [105] xtable_1.8-4              cluster_2.1.4            
+    ## [107] beeswarm_0.4.0            evaluate_0.21            
+    ## [109] cli_3.6.1                 locfit_1.5-9.8           
+    ## [111] compiler_4.3.1            rlang_1.1.1              
+    ## [113] crayon_1.5.2              future.apply_1.11.0      
+    ## [115] labeling_0.4.3            plyr_1.8.8               
+    ## [117] stringi_1.7.12            viridisLite_0.4.2        
+    ## [119] deldir_1.0-9              BiocParallel_1.34.2      
+    ## [121] munsell_0.5.0             lazyeval_0.2.2           
+    ## [123] spatstat.geom_3.2-5       Matrix_1.6-1.1           
+    ## [125] patchwork_1.1.3           sparseMatrixStats_1.12.2 
+    ## [127] future_1.33.0             statmod_1.5.0            
+    ## [129] shiny_1.7.5               ROCR_1.0-11              
+    ## [131] igraph_1.5.1
