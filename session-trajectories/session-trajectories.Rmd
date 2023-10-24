@@ -1,0 +1,273 @@
+---
+title: "Trajectory inference"
+author: "Qirong Mao"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+set.seed(32546)
+```
+
+Acknowledgment: This tutorial of Dimensionality Reduction is based on the Slingshot tutorial on Bioconductor ([Link](https://bioconductor.org/packages/devel/bioc/vignettes/slingshot/inst/doc/vignette.html))
+and the single cell RNA-seq workshop from Broad Institute ([Link](https://broadinstitute.github.io/2020_scWorkshop/trajectory-analysis.html))
+
+
+```{r, packages, message=FALSE, warning=FALSE}
+suppressPackageStartupMessages({
+library(SingleCellExperiment)
+library(Seurat)
+library(ggbeeswarm)
+library(ggthemes)
+library(dplyr)
+library(cowplot)
+library(RColorBrewer)
+library(scater)
+library(scran)
+library(tradeSeq)
+library(slingshot)
+})
+```
+
+## Data loading
+
+We will use a nice SMART-Seq2 single cell RNA-seq data from Single-Cell RNA-Seq Reveals Dynamic, Random Monoallelic Gene Expression in Mammalian Cells. Here is one relevant detail from their paper: “To investigate allele-specific gene expression at single-cell resolution, we isolated 269 individual cells dissociated from in vivo F1 embryos (CAST/EiJ × C57BL/6J, hereafter abbreviated as CAST and C57, respectively) from oocyte to blastocyst stages of mouse preimplantation development (PD)”
+
+```{r}
+mydir <- "/cloud/project/session-trajectories/data/"
+path.deng <- paste0(mydir, "deng-reads.rds")
+deng_SCE <- readRDS(path.deng)
+```
+
+
+```{r}
+table(deng_SCE$cell_type2)
+```
+
+## Principle Components Analysis
+
+Let us take a first look at the Deng data. One simple approach to ordering cells in pseudotime is to use PCA. By carrying out PCA and labeling the cells by the stage at which they were collected, we can see how well the principal components separate cells along a differentiation trajectory.
+
+```{r}
+##
+deng_SCE$cell_type2 <- factor(deng_SCE$cell_type2,
+                              levels = c("zy", "early2cell", "mid2cell", "late2cell", 
+                                         "4cell", "8cell", "16cell", "earlyblast",
+                                         "midblast", "lateblast"))
+```
+
+```{r}
+# Run PCA on Deng data. Use the runPCA function from the SingleCellExperiment package.
+deng_SCE <- runPCA(deng_SCE, ncomponents = 50)
+
+# Use the reducedDim function to access the PCA and store the results. 
+pca <- reducedDim(deng_SCE, "PCA")
+
+# Describe how the PCA is stored in a matrix. Why does it have this structure?
+head(pca)
+```
+
+```{r}
+dim(pca)
+```
+
+
+
+```{r}
+plotReducedDim(deng_SCE, dimred = "PCA",colour_by="cell_type2",ncomponents = (1:2))
+```
+
+You could find PC1 and PC2 captured variances based on different development stages, let's take a further look:
+
+```{r}
+# designed to capture differentiation processes. As a simple measure of pseudotime 
+# we can use the coordinates of PC1.
+# Plot PC1 vs cell_type2. 
+deng_SCE$PC1 <- pca[,1]
+deng_SCE$PC2 <- pca[,2]
+deng_SCE$pseudotime_PC1 <- rank(deng_SCE$PC1)  # rank cells by their PC1 score
+ggplot(as.data.frame(colData(deng_SCE)), aes(x = pseudotime_PC1, y = cell_type2, 
+                                             colour = cell_type2)) +
+    geom_quasirandom(groupOnX = FALSE) +
+    scale_color_tableau() + theme_classic() +
+    xlab("PC1") + ylab("Timepoint") +
+    ggtitle("Cells ordered by first principal component")
+```
+
+```{r}
+# Try separating the cell types using other PCs. How does the separation look?
+plotReducedDim(deng_SCE, dimred = "PCA",colour_by="cell_type2",ncomponents = (2:3))
+```
+
+
+## Slingshot map pseudotime
+
+Let us see how another advance trajectory inference method, Slingshot, performs at placing cells along the expected differentiation trajectory.
+
+```{r}
+sce <- slingshot(deng_SCE, reducedDim = 'PCA')  # no clusters provided
+```
+
+
+
+
+```{r}
+# Plot PC1 vs PC2 colored by Slingshot pseudotime.
+colors <- rainbow(50, alpha = 1)
+plot(reducedDims(sce)$PCA, col = colors[cut(sce$slingPseudotime_1,breaks=50)], pch=16, asp = 1)
+lines(SlingshotDataSet(sce), lwd=2)
+
+```
+Let's order cells based on the pseudotime from Slingshot:
+
+```{r}
+
+slingshot_df <- data.frame(colData(sce)[, names(colData(sce)) != 'slingshot', drop=FALSE])
+
+# Plot Slingshot pseudotime vs cell stage. 
+ggplot(slingshot_df, aes(x = sce$slingPseudotime_1, y = cell_type2, 
+                              colour = cell_type2)) +
+    geom_quasirandom(groupOnX = FALSE) +
+    scale_color_tableau() + theme_classic() +
+    xlab("Slingshot pseudotime") + ylab("Timepoint") +
+    ggtitle("Cells ordered by Slingshot pseudotime")
+
+```
+
+Next, we are gonna re-clustered the data and run Slingshot again to see if they still align with the known cluster labels in the data.
+
+```{r}
+# Cluster cells using the Seurat workflow below.
+gcdata <- CreateSeuratObject(counts = counts(deng_SCE), project = "slingshot")
+gcdata <- NormalizeData(gcdata, normalization.method = "LogNormalize", scale.factor = 10000)
+gcdata <- FindVariableFeatures(gcdata, selection.method = "vst", nfeatures = 2000)
+gcdata <- ScaleData(object = gcdata, do.center = T, do.scale = F)
+gcdata <- RunPCA(gcdata, features = VariableFeatures(gcdata), npcs = 40, ndims.print = 1:5, nfeatures.print = 5)
+# Cluster the cells using the first twenty principal components.
+gcdata <- FindNeighbors(gcdata, reduction = "pca", dims = 1:20, k.param = 20)
+gcdata <- FindClusters(gcdata, resolution = 0.8, algorithm = 1, random.seed = 100)
+# Add clustering information from Seurat to the deng_SCE object
+colData(deng_SCE)$Seurat_clusters <- as.character(Idents(gcdata))
+```
+
+
+```{r}
+plotReducedDim(deng_SCE, dimred = "PCA",color_by="cell_type2",shape_by="Seurat_clusters",ncomponents = (1:2))
+```
+
+
+```{r}
+# Then run Slingshot using these cluster assignments.
+sce2 <- slingshot(deng_SCE, clusterLabels = 'Seurat_clusters', reducedDim = 'PCA')
+
+# Plot PC1 vs PC2 colored by Slingshot pseudotime.
+colors <- rainbow(50, alpha = 1)
+plot(reducedDims(sce2)$PCA, col = colors[cut(sce2$slingPseudotime_1,breaks=50)], pch=16, asp = 1)
+lines(SlingshotDataSet(sce2), lwd=2, type = 'lineages', col = 'black')
+```
+
+
+```{r}
+## Checking the linkage information
+SlingshotDataSet(sce2)
+```
+
+
+
+```{r}
+slingshot_df2 <- data.frame(colData(sce2)[, names(colData(sce2)) != 'slingshot', drop=FALSE])
+
+slingshot_df2$Seurat_clusters <- factor(slingshot_df2$Seurat_clusters,
+                              levels = c("3", "2", "4", "0", 
+                                         "1", "5"))
+
+# Plot Slingshot pseudotime vs cell stage. 
+ggplot(slingshot_df2, aes(x = slingPseudotime_1, y = Seurat_clusters, 
+                              colour = cell_type2)) +
+    geom_quasirandom(groupOnX = FALSE) +
+    scale_color_tableau() + theme_classic() +
+    xlab("Slingshot pseudotime") + ylab("Timepoint") +
+    ggtitle("Cells ordered by Slingshot pseudotime")
+```
+
+
+```{r}
+
+deng_SCE$cell_type2 <- factor(deng_SCE$cell_type2,
+                              levels = c("zy", "early2cell", "mid2cell", "late2cell", 
+                                         "4cell", "8cell", "16cell", "earlyblast",
+                                         "midblast", "lateblast"))
+
+slingshot_df2 <- data.frame(colData(sce2)[, names(colData(sce2)) != 'slingshot', drop=FALSE])
+
+# Plot Slingshot pseudotime vs cell stage. 
+ggplot(slingshot_df2, aes(x = slingPseudotime_1, y = cell_type2, 
+                              colour = cell_type2)) +
+    geom_quasirandom(groupOnX = FALSE) +
+    scale_color_tableau() + theme_classic() +
+    xlab("Slingshot pseudotime") + ylab("Timepoint") +
+    ggtitle("Cells ordered by Slingshot pseudotime")
+```
+
+
+
+## Identifying temporally dynamic genes
+
+After running slingshot, we are often interested in finding genes that change their expression over the course of development. We will demonstrate this type of analysis using the tradeSeq package ([Van den Berge et al. 2020](https://www.nature.com/articles/s41467-020-14766-3)).
+
+For each gene, we will fit a general additive model (GAM) using a negative binomial noise distribution to model the (potentially nonlinear) relationships between gene expression and pseudotime. We will then test for significant associations between expression and pseudotime using the associationTest.
+
+Here, we are only chosing ~160 highly variable genes to run the GAM due to the computational time. You should use all the genes during your analysis.
+
+```{r}
+## Selecting highly variable genes
+hvg <- modelGeneVar(sce)
+chosen <- getTopHVGs(hvg, prop=0.02)
+sce <- sce[chosen,]
+
+# fit negative binomial GAM
+sce <- fitGAM(sce)
+
+# test for dynamic expression
+ATres <- associationTest(sce)
+```
+
+
+Next, we visualize these genes in a heatmap with the order of the pseudotime:
+
+```{r}
+topgenes <- rownames(ATres[order(ATres$pvalue), ])
+pst.ord <- order(sce$slingPseudotime_1, na.last = NA)
+heatdata <- assays(sce)$counts[topgenes, pst.ord]
+heatclus <- sce$cell_type2[pst.ord]
+
+heatmap(log1p(heatdata), Colv = NA,
+        ColSideColors = brewer.pal(9,"Set1")[heatclus])
+```
+
+Based on the heatmap, you could find temporally dynamic genes across diffrent development stage, let's visualize some genes as example:
+
+```{r}
+p1=plotExpression(deng_SCE, features = "Ccne1", x = "cell_type2",colour_by="cell_type2",exprs_values = "logcounts") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p2=plotReducedDim(deng_SCE, dimred = "PCA",color_by="Ccne1",ncomponents = (1:2))
+p1+p2
+```
+
+```{r}
+p1=plotExpression(deng_SCE, features = "Stac2", x = "cell_type2",colour_by="cell_type2",exprs_values = "logcounts") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p2=plotReducedDim(deng_SCE, dimred = "PCA",color_by="Stac2",ncomponents = (1:2))
+p1+p2
+```
+
+```{r}
+p1=plotExpression(deng_SCE, features = "Tmem180", x = "cell_type2",colour_by="cell_type2",exprs_values = "logcounts") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p2=plotReducedDim(deng_SCE, dimred = "PCA",color_by="Tmem180",ncomponents = (1:2))
+p1+p2
+```
+Here, we are using a simple dataset with only 268 cells, which is why we only got one linkage in the dataset, if you want to explore larger dataset with multiple linkages with Slingshot, please check [here](https://nbisweden.github.io/workshop-scRNAseq/labs/trajectory/slingshot.html)
+
+
+```{r}
+sessionInfo()
+```
