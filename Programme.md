@@ -29,7 +29,7 @@
 ### Day 3 (Wednesday 25.10.2023) - LOCATION
 | When | What | Who |
 | ------------- | ------------- | ------------- |
-|09:00-10:00 |Lecture: [Data integration](Lectures/Day3_Data_Integration_Abdelaal.pdf) | Tamim Abdelaal |
+|09:00-10:00 |Lecture: [Data integration](Lectures/Day3_Data_Integration_Abdelaal_2023.pdf) | Tamim Abdelaal |
 |10:00-10:15 |_break_ |  |
 |10:15-11:15 |Practical: [Data integration](session-integration/Data_Integration.md) | TAs (Remco,Lieke)|
 |11:15-12:00 |Practical: [Clustering and cell annotation](session-clustering/Clustering.md) | TAs (Remco,Lieke) |
