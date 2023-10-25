@@ -22,7 +22,7 @@
 |12:00-13:00 |_lunch_ |  |
 |13:00-14:30 |Practical: [Quality control and normalization](session-qc-normalization/QC_Normalization.md) | TAs |
 |14:30-14:45 |_break_ | |
-|14:45-15:45 |Lecture: [Clustering and cell annotation](Lectures/Day3_clustering_cell_annotation_Reinders.pdf) | Lieke Michielsen |
+|14:45-15:45 |Lecture: [Clustering and cell annotation](Lectures/Day2_clustering_Michielsen.pdf) | Lieke Michielsen |
 |15:45-16:00 |_break_ | |
 |16:00-17:00 |Online Lecture: scNL symposium | Stefania Giacomello |
 
