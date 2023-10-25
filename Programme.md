@@ -34,11 +34,11 @@
 |10:15-11:15 |Practical: [Data integration](session-integration/Data_Integration.md) | TAs (Remco,Lieke)|
 |11:15-12:00 |Practical: [Clustering and cell annotation](session-clustering/Clustering.md) | TAs (Remco,Lieke) |
 |12:00-13:00 |_lunch_ |  |
-|13:00-14:00 |Lecture: [Differential expression analysis](Lectures/Day4_Differential_expression_Mahfouz.pdf) | Ahmed Mahfouz |
+|13:00-14:00 |Lecture: [Differential expression analysis](Lectures/Day3_Differential_expression_analysis_Mahfouz.pdf) | Ahmed Mahfouz |
 |14:00-14:15 |_break_ | |
 |14:15-15:45 |Practical: [Differential expression analysis](session-differentialexpression/Differential_Expression.md) | TAs (Remco,Mayte) |
 |15:45-16:00 |_break_ | |
-|16:00-17:00 |Lecture: [Trajectory inference](Lectures/Day4_Trajectory_inference_Charrout.pdf) | Ahmed Mahfouz |
+|16:00-17:00 |Lecture: [Trajectory inference](Lectures/Day3_Trajectory_inference_Mahfouz.pdf) | Ahmed Mahfouz |
 
 ### Day 4 (Thursday 26.10.2023) - LOCATION
 | When | What | Who |
