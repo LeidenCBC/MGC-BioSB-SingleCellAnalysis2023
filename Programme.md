@@ -43,7 +43,7 @@
 ### Day 4 (Thursday 26.10.2023) - LOCATION
 | When | What | Who |
 | ------------- | ------------- | ------------- |
-|09:00-10:00 |Lecture: [Spatial transcriptomics](Lectures/Day4_Spatial_transcriptomics.pdf) | Laura Heezen |
+|09:00-10:00 |Lecture: [Spatial transcriptomics](Lectures/Day4_SpatialTranscriptomics_Heezen.pdf) | Laura Heezen |
 |10:00-10:15 |_break_ |  |
 |10:15-11:15 |Practical: [Trajectory inference](session-trajectories/session-trajectories.md) | TAs (Gregory,Qirong) |
 |11:15-12:00 |Practical: [Spatial transcriptomics](session-spatialtranscriptomics/Spatialtranscriptomics.md) | TAs (Gregory,Qirong) |
